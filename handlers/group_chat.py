@@ -493,7 +493,7 @@ async def cb_join_team(call: CallbackQuery):
         for i, p in enumerate(white_list)
     ]) or "  <i>Bo'sh</i>"
     black_text = "\n".join([
-        f"  • <a href='tg://user?id={p[\"user_id\"]}'>"
+        f" • <a href='tg://user?id={p['user_id']}'>"
         f"O'yinchi {i+1}</a>"
         for i, p in enumerate(black_list)
     ]) or "  <i>Bo'sh</i>"
