@@ -245,7 +245,7 @@ async def cmd_ariza(message: Message, bot: Bot):
             ADMIN_ID,
             f"📨 <b>YANGI ARIZA!</b>\n\n"
             f"👤 <b>Kimdan:</b> {message.from_user.full_name} "
-            f"(@{message.from_user.username or 'username yo\\'q'})\n"
+            f"(@{message.from_user.username or 'username yo`q'})\n"
             f"🆔 ID: <code>{message.from_user.id}</code>\n\n"
             f"📝 <b>Ariza matni:</b>\n{ariza_text}",
             parse_mode="HTML",
