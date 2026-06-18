@@ -1,0 +1,13 @@
+# Sud Tizimi Bot
+# Ma'lumotlar bazasi (serverda yaratiladi)
+*.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# IDE
+.vscode/
+.idea/
