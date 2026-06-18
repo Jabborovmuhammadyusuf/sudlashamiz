@@ -30,19 +30,24 @@ async def cmd_start_private(message: Message):
         message.from_user.full_name
     )
     user = await get_user(message.from_user.id)
-    coins = user["coins"] if user else 0
+   coins = user["coins"] if user else 0
+# Avval matnni tayyorlab olamiz
+text = (
+    "👤 <b>SUD TIZIMI</b> botiga xush kelibsiz!\n\n"
+    f"💰 Balansingiz: <b>{coins} Court Coins</b>\n\n"
+    "📜 <b>Mavjud buyruqlar:</b>\n"
+    "🛒 /shop – Do'kon (super kartalar)\n"
+    "📦 /mening_xaridlarim – Xaridlarim\n"
+    "📝 /ariza [sabab] – Sudyaga ariza yuborish\n"
+    "💰 /balans – Coin balansim\n\n"
+)
 
-    await message.answer(
-        f"👨‍⚖️ <b>SUD TIZIMI</b> botiga xush kelibsiz!\n\n"
-        f"💰 Balansingiz: <b>{coins} Court Coins</b>\n\n"
-        f"📋 <b>Mavjud buyruqlar:</b>\n"
-        f"  🛒 /shop — Do'kon (super kartalar)\n"
-        f"  📦 /mening_xaridlarim — Xaridlarim\n"
-        f"  📝 /ariza [sabab] — Sudyaga ariza yuborish\n"
-        f"  💰 /balans — Coin balansim\n\n"
-        f"{'⚙️ /add_item — Yangi tovar qo'shish (Admin)' if message.from_user.id == ADMIN_ID else ''}"
-        parse_mode="HTML"
-    )
+# Agar xabar yozgan odam Admin bo'lsa, matnga admin buyrug'ini qo'shamiz
+if message.from_user.id == ADMIN_ID:
+    text += "⚙️ /add_item – Yangi tovar qo'shish (Admin)\n"
+
+# Yakuniy matnni bitta qilib yuboramiz
+await message.answer(text, parse_mode="HTML")
 
 
 # ─────────────────────────────────────────────────────
