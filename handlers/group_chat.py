@@ -26,9 +26,6 @@ router = Router()
 ROLES_WHITE = ["Advokat", "Guvoh (Oq)", "Fuqaro 1", "Fuqaro 2"]
 ROLES_BLACK = ["Prokuror", "Guvoh (Qora)", "Jinoyatchi 1", "Jinoyatchi 2"]
 
-# game_id → asyncio.Task (polling tasklari)
-_vc_poll_tasks: dict[int, asyncio.Task] = {}
-
 
 # ══════════════════════════════════════════════════════
 #  YORDAMCHI: CHAT MUZLATISH / OCHISH
@@ -78,131 +75,6 @@ async def mute_voice_team(bot: Bot, chat_id: int, players: list, muted: bool):
 
 
 # ══════════════════════════════════════════════════════
-#  VIDEO CHAT TEKSHIRUVI
-# ══════════════════════════════════════════════════════
-
-async def check_voice_chat_active(bot: Bot, chat_id: int) -> bool:
-    """
-    get_chat() orqali guruhda faol video/ovozli chat bor-yo'qligini tekshiradi.
-    Telegram Bot API: Chat.video_chat_scheduled / video_chat_started mavjud bo'lsa True.
-    Xatolik yuz bersa False qaytaradi (adminni xabardor qilish uchun).
-    """
-    try:
-        chat = await bot.get_chat(chat_id)
-        # Faol video chat bo'lsa chat.video_chat_started None bo'lmaydi
-        return chat.video_chat_started is not None
-    except Exception as e:
-        logger.warning(f"check_voice_chat_active xatosi: {e}")
-        return False
-
-
-async def _vc_poll_loop(bot: Bot, chat_id: int, game_id: int, notify_msg_id: int):
-    """
-    Video chat ochilguncha har 10 soniyada tekshirib turadi.
-    Ochilganda adminni xabardor qiladi va o'yin davom etadi.
-    """
-    attempt = 0
-    while True:
-        await asyncio.sleep(10)
-        attempt += 1
-        is_active = await check_voice_chat_active(bot, chat_id)
-        if is_active:
-            # Video chat topildi — bazani yangilaymiz
-            await set_voice_chat_verified(game_id, True)
-            _vc_poll_tasks.pop(game_id, None)
-
-            # Adminni xabardor qilish
-            try:
-                await bot.edit_message_text(
-                    chat_id=chat_id,
-                    message_id=notify_msg_id,
-                    text=(
-                        "✅ <b>Video chat aniqlandi!</b>\n\n"
-                        "O'yin davom etmoqda. Sudya boshqaruvini ishlatishingiz mumkin."
-                    ),
-                    parse_mode="HTML",
-                )
-            except Exception:
-                await bot.send_message(
-                    chat_id,
-                    "✅ <b>Video chat aniqlandi! O'yin davom etmoqda.</b>",
-                    parse_mode="HTML",
-                )
-
-            # Adminning lichkasiga ham yuborish
-            try:
-                await bot.send_message(
-                    ADMIN_ID,
-                    f"✅ O'yin #{game_id}: Video chat tasdiqlandi. Boshqaruv tugmalari faol.",
-                )
-            except Exception:
-                pass
-            return  # loop tugaydi
-
-        # Har 3 urinishda (30 son) eslatma
-        if attempt % 3 == 0:
-            try:
-                await bot.send_message(
-                    ADMIN_ID,
-                    f"⏳ O'yin #{game_id}: Video chat hali ochilmagan.\n"
-                    f"Guruhda Video Chat/Voice Chat ni oching, o'yin avtomatik davom etadi.",
-                )
-            except Exception:
-                pass
-
-
-async def start_vc_poll(bot: Bot, chat_id: int, game_id: int, notify_msg_id: int):
-    """Polling taskini ishga tushiradi (oldingi task bo'lsa to'xtatadi)."""
-    old = _vc_poll_tasks.pop(game_id, None)
-    if old and not old.done():
-        old.cancel()
-    task = asyncio.create_task(
-        _vc_poll_loop(bot, chat_id, game_id, notify_msg_id)
-    )
-    _vc_poll_tasks[game_id] = task
-
-
-# ══════════════════════════════════════════════════════
-#  VIDEO CHAT STARTED EVENT (Telegram yuborganda)
-# ══════════════════════════════════════════════════════
-
-@router.message(F.video_chat_started.as_("vc"))
-async def on_video_chat_started(message: Message, bot: Bot):
-    """
-    Guruhda Video Chat ochilganda Telegram xabar yuboradi.
-    Agar o'yin video chat kutayotgan bo'lsa — avtomatik tasdiqlaydi.
-    """
-    game = await get_active_game(message.chat.id)
-    if not game:
-        return
-    if game.get("voice_chat_verified"):
-        return  # Allaqachon tasdiqlangan
-
-    await set_voice_chat_verified(game["game_id"], True)
-
-    # Polling task bo'lsa to'xtatamiz
-    old = _vc_poll_tasks.pop(game["game_id"], None)
-    if old and not old.done():
-        old.cancel()
-
-    kb = _build_judge_kb(game["game_id"])
-    await message.reply(
-        "🎙️ <b>Video Chat ochildi!</b>\n\n"
-        "✅ Sud majlisi uchun muhit tayyor.\n"
-        "Sudya boshqaruv tugmalaridan foydalanishingiz mumkin:",
-        parse_mode="HTML",
-        reply_markup=kb,
-    )
-    try:
-        await bot.send_message(
-            ADMIN_ID,
-            f"✅ O'yin #{game['game_id']}: Video Chat ochildi, o'yin davom etmoqda.",
-        )
-    except Exception:
-        pass
-
-
-# ══════════════════════════════════════════════════════
 #  YORDAMCHI: SUDYA KLAVIATURASI
 # ══════════════════════════════════════════════════════
 
@@ -210,11 +82,11 @@ def _build_judge_kb(game_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🎤 Oqlar Gapirsin",  callback_data=f"unmute_white_{game_id}"),
+                InlineKeyboardButton(text="🎤 Oqlar Gapirsin",   callback_data=f"unmute_white_{game_id}"),
                 InlineKeyboardButton(text="🎤 Qoralar Gapirsin", callback_data=f"unmute_black_{game_id}"),
             ],
             [InlineKeyboardButton(text="🔇 Hammani Jim Qil", callback_data=f"mute_all_{game_id}")],
-            [InlineKeyboardButton(text="⚖️ O'yinni Yakunlash", callback_data=f"end_game_{game_id}")],
+            [InlineKeyboardButton(text="⚖️ O'yinni Yakunlash",  callback_data=f"end_game_{game_id}")],
         ]
     )
 
@@ -266,9 +138,9 @@ async def cmd_yangi_ish(message: Message, bot: Bot):
 
 @router.callback_query(F.data.startswith("join_white_") | F.data.startswith("join_black_"))
 async def cb_join_team(call: CallbackQuery):
-    parts    = call.data.split("_")
-    team     = parts[1]
-    game_id  = int(parts[2])
+    parts   = call.data.split("_")
+    team    = parts[1]
+    game_id = int(parts[2])
 
     await register_user(call.from_user.id, call.from_user.username, call.from_user.full_name)
 
@@ -285,11 +157,11 @@ async def cb_join_team(call: CallbackQuery):
     await add_player(game_id, call.from_user.id, team, role)
     await call.answer(f"✅ {team_name} ga qo'shildingiz! Rolingiz: {role}", show_alert=True)
 
-    all_players  = await get_players(game_id)
-    white_list   = [p for p in all_players if p["team"] == "white"]
-    black_list   = [p for p in all_players if p["team"] == "black"]
-    white_text   = "\n".join([f"  • User {p['user_id']}" for p in white_list]) or "  <i>Bo'sh</i>"
-    black_text   = "\n".join([f"  • User {p['user_id']}" for p in black_list]) or "  <i>Bo'sh</i>"
+    all_players = await get_players(game_id)
+    white_list  = [p for p in all_players if p["team"] == "white"]
+    black_list  = [p for p in all_players if p["team"] == "black"]
+    white_text  = "\n".join([f"  • User {p['user_id']}" for p in white_list]) or "  <i>Bo'sh</i>"
+    black_text  = "\n".join([f"  • User {p['user_id']}" for p in black_list]) or "  <i>Bo'sh</i>"
 
     try:
         kb = InlineKeyboardMarkup(
@@ -312,7 +184,7 @@ async def cb_join_team(call: CallbackQuery):
 
 # ══════════════════════════════════════════════════════
 #  /start_court — O'yinni rasman boshlash
-#  Bu yerda video chat tekshiruvi amalga oshiriladi
+#  Video chat tekshiruvi o'chirildi — bevosita boshlanadi
 # ══════════════════════════════════════════════════════
 
 @router.message(Command("start_court"))
@@ -334,42 +206,11 @@ async def cmd_start_court(message: Message, bot: Bot):
         await message.reply("⚠️ O'yinga kamida 2 ta ishtirokchi kerak!")
         return
 
-    # ── 1. Video chat tekshiruvi ──────────────────────
-    vc_active = await check_voice_chat_active(bot, message.chat.id)
-
-    if not vc_active:
-        # Video chat yo'q — o'yinni blokladik, kutish rejimiga o'tamiz
-        warn_msg = await message.reply(
-            "🔴 <b>VIDEO CHAT TOPILMADI!</b>\n\n"
-            "O'yin <b>Tun</b> yoki <b>Nutq</b> fazasiga o'ta olmaydi.\n\n"
-            "📋 <b>Nima qilish kerak:</b>\n"
-            "  1️⃣ Guruhda <b>Video Chat</b> (Voice Chat) ni oching\n"
-            "       <i>Guruh nomi → ••• → Start Video Chat</i>\n"
-            "  2️⃣ Bot avtomatik aniqlaydi va o'yin davom etadi\n\n"
-            "⏳ <i>Bot har 10 soniyada tekshirib turadi...</i>",
-            parse_mode="HTML",
-        )
-
-        # Adminning lichkasiga ham ogohlantirish
-        try:
-            await bot.send_message(
-                ADMIN_ID,
-                f"⚠️ O'yin #{game['game_id']} uchun Video Chat ochilmagan!\n"
-                f"Guruhda Video Chat ni oching — o'yin avtomatik davom etadi.",
-            )
-        except Exception:
-            pass
-
-        # Polling loop ishga tushadi
-        await start_vc_poll(bot, message.chat.id, game["game_id"], warn_msg.message_id)
-        return  # ← o'yin shu yerda bloklanadi
-
-    # ── 2. Video chat bor — o'yinni boshlash ─────────
     await _launch_game(bot, message, game)
 
 
 async def _launch_game(bot: Bot, message: Message, game: dict):
-    """Video chat tasdiqlangach o'yinni to'liq ishga tushiradi."""
+    """O'yinni to'liq ishga tushiradi."""
     await set_voice_chat_verified(game["game_id"], True)
     await update_game_status(game["game_id"], "active")
     await freeze_chat(bot, message.chat.id)
@@ -384,8 +225,8 @@ async def _launch_game(bot: Bot, message: Message, game: dict):
     kb = _build_judge_kb(game["game_id"])
     await message.reply(
         "⚖️ <b>SUD MAJLISI OCHILDI!</b>\n\n"
-        "🎙️ Video Chat faol — barcha ishtirokchilar ulangan.\n"
-        "Guruh chati muzlatildi. Faqat Sudya tugmalar orqali so'z beradi.\n\n"
+        "🎙️ Guruh chati muzlatildi.\n"
+        "Faqat Sudya tugmalar orqali so'z beradi.\n\n"
         "👨‍⚖️ <b>Sudya boshqaruvi:</b>",
         parse_mode="HTML",
         reply_markup=kb,
@@ -393,71 +234,8 @@ async def _launch_game(bot: Bot, message: Message, game: dict):
 
 
 # ══════════════════════════════════════════════════════
-#  /check_vc — Qo'lda video chat holatini tekshirish
-# ══════════════════════════════════════════════════════
-
-@router.message(Command("check_vc"))
-async def cmd_check_vc(message: Message, bot: Bot):
-    """Admin qo'lda video chat holatini tekshiradi."""
-    if message.from_user.id != ADMIN_ID:
-        await message.reply("⛔️ Faqat Sudya!")
-        return
-
-    game = await get_active_game(message.chat.id)
-    if not game:
-        await message.reply("❌ Faol o'yin topilmadi.")
-        return
-
-    is_active = await check_voice_chat_active(bot, message.chat.id)
-
-    if is_active:
-        if not game.get("voice_chat_verified"):
-            # Bazani yangilaymiz va polling taskni o'chiramiz
-            await set_voice_chat_verified(game["game_id"], True)
-            old = _vc_poll_tasks.pop(game["game_id"], None)
-            if old and not old.done():
-                old.cancel()
-
-        if game["status"] == "waiting":
-            await message.reply(
-                "✅ <b>Video Chat faol!</b>\n\n"
-                "O'yinni boshlash uchun /start_court buyrug'ini yuboring.",
-                parse_mode="HTML",
-            )
-        else:
-            await message.reply(
-                "✅ <b>Video Chat faol.</b> O'yin allaqachon boshlangan.",
-                parse_mode="HTML",
-            )
-    else:
-        await message.reply(
-            "🔴 <b>Video Chat hozircha yo'q.</b>\n\n"
-            "Guruhda Video Chat ni oching, keyin qayta /check_vc yuboring\n"
-            "yoki bot avtomatik aniqlaydi (har 10 soniyada tekshiradi).",
-            parse_mode="HTML",
-        )
-
-
-# ══════════════════════════════════════════════════════
 #  SUDYA TUGMALARI — Mikrofon boshqaruvi
-#  Har bir callback da avval voice_chat_verified tekshiriladi
 # ══════════════════════════════════════════════════════
-
-async def _require_vc(call: CallbackQuery, game_id: int) -> bool:
-    """
-    Video chat tasdiqlanmagan bo'lsa adminni ogohlantiradi va False qaytaradi.
-    True bo'lsa davom etish mumkin.
-    """
-    game = await get_game_by_id(game_id)
-    if not game.get("voice_chat_verified"):
-        await call.answer(
-            "🔴 Video Chat ochilmagan!\n"
-            "Guruhda Video Chat ni oching va /check_vc yuboring.",
-            show_alert=True,
-        )
-        return False
-    return True
-
 
 @router.callback_query(F.data.startswith("unmute_white_"))
 async def cb_unmute_white(call: CallbackQuery, bot: Bot):
@@ -465,13 +243,10 @@ async def cb_unmute_white(call: CallbackQuery, bot: Bot):
         await call.answer("⛔️ Faqat Sudya boshqara oladi!", show_alert=True)
         return
     game_id = int(call.data.split("_")[2])
-    if not await _require_vc(call, game_id):
-        return
+    game    = await get_game_by_id(game_id)
 
-    game          = await get_game_by_id(game_id)
     black_players = await get_team_players(game_id, "black")
     white_players = await get_team_players(game_id, "white")
-
     await mute_voice_team(bot, game["chat_id"], black_players, True)
     await mute_voice_team(bot, game["chat_id"], white_players, False)
     await set_current_turn(game_id, "white")
@@ -488,13 +263,10 @@ async def cb_unmute_black(call: CallbackQuery, bot: Bot):
         await call.answer("⛔️ Faqat Sudya boshqara oladi!", show_alert=True)
         return
     game_id = int(call.data.split("_")[2])
-    if not await _require_vc(call, game_id):
-        return
+    game    = await get_game_by_id(game_id)
 
-    game          = await get_game_by_id(game_id)
     white_players = await get_team_players(game_id, "white")
     black_players = await get_team_players(game_id, "black")
-
     await mute_voice_team(bot, game["chat_id"], white_players, True)
     await mute_voice_team(bot, game["chat_id"], black_players, False)
     await set_current_turn(game_id, "black")
@@ -510,10 +282,7 @@ async def cb_mute_all(call: CallbackQuery, bot: Bot):
     if call.from_user.id != ADMIN_ID:
         await call.answer("⛔️ Faqat Sudya boshqara oladi!", show_alert=True)
         return
-    game_id = int(call.data.split("_")[2])
-    if not await _require_vc(call, game_id):
-        return
-
+    game_id     = int(call.data.split("_")[2])
     game        = await get_game_by_id(game_id)
     all_players = await get_alive_players(game_id)
     await mute_voice_team(bot, game["chat_id"], all_players, True)
@@ -588,8 +357,8 @@ async def cb_end_game(call: CallbackQuery, bot: Bot):
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="⚖️ OQ JAMOA G'ALABA",   callback_data=f"winner_white_{game_id}"),
-                InlineKeyboardButton(text="🖤 QORA JAMOA G'ALABA",  callback_data=f"winner_black_{game_id}"),
+                InlineKeyboardButton(text="⚖️ OQ JAMOA G'ALABA",  callback_data=f"winner_white_{game_id}"),
+                InlineKeyboardButton(text="🖤 QORA JAMOA G'ALABA", callback_data=f"winner_black_{game_id}"),
             ]
         ]
     )
@@ -598,6 +367,7 @@ async def cb_end_game(call: CallbackQuery, bot: Bot):
         parse_mode="HTML",
         reply_markup=kb,
     )
+    await call.answer()
 
 
 @router.callback_query(F.data.startswith("winner_"))
@@ -609,11 +379,6 @@ async def cb_winner(call: CallbackQuery, bot: Bot):
     team    = parts[1]
     game_id = int(parts[2])
     game    = await get_game_by_id(game_id)
-
-    # Polling taskni o'chirish
-    old = _vc_poll_tasks.pop(game_id, None)
-    if old and not old.done():
-        old.cancel()
 
     winner_ids = await reward_winners(game_id, team)
     await update_game_status(game_id, "finished")
@@ -633,6 +398,10 @@ async def cb_winner(call: CallbackQuery, bot: Bot):
     await call.answer("✅ O'yin yakunlandi!")
 
 
+# ══════════════════════════════════════════════════════
+#  /end_court — Majburiy to'xtatish
+# ══════════════════════════════════════════════════════
+
 @router.message(Command("end_court"))
 async def cmd_end_court(message: Message, bot: Bot):
     if message.from_user.id != ADMIN_ID:
@@ -642,10 +411,6 @@ async def cmd_end_court(message: Message, bot: Bot):
     if not game:
         await message.reply("❌ Faol o'yin yo'q.")
         return
-
-    old = _vc_poll_tasks.pop(game["game_id"], None)
-    if old and not old.done():
-        old.cancel()
 
     await update_game_status(game["game_id"], "finished")
     await unfreeze_chat(bot, message.chat.id)
