@@ -30,24 +30,25 @@ async def cmd_start_private(message: Message):
         message.from_user.full_name
     )
     user = await get_user(message.from_user.id)
-   coins = user["coins"] if user else 0
-# Avval matnni tayyorlab olamiz
-text = (
-    "👤 <b>SUD TIZIMI</b> botiga xush kelibsiz!\n\n"
-    f"💰 Balansingiz: <b>{coins} Court Coins</b>\n\n"
-    "📜 <b>Mavjud buyruqlar:</b>\n"
-    "🛒 /shop – Do'kon (super kartalar)\n"
-    "📦 /mening_xaridlarim – Xaridlarim\n"
-    "📝 /ariza [sabab] – Sudyaga ariza yuborish\n"
-    "💰 /balans – Coin balansim\n\n"
-)
+    coins = user["coins"] if user else 0
 
-# Agar xabar yozgan odam Admin bo'lsa, matnga admin buyrug'ini qo'shamiz
-if message.from_user.id == ADMIN_ID:
-    text += "⚙️ /add_item – Yangi tovar qo'shish (Admin)\n"
+    # Avval matnni tayyorlab olamiz
+    text = (
+        "👤 <b>SUD TIZIMI</b> botiga xush kelibsiz!\n\n"
+        f"💰 Balansingiz: <b>{coins} Court Coins</b>\n\n"
+        "📜 <b>Mavjud buyruqlar:</b>\n"
+        "🛒 /shop – Do'kon (super kartalar)\n"
+        "📦 /mening_xaridlarim – Xaridlarim\n"
+        "📝 /ariza [sabab] – Sudyaga ariza yuborish\n"
+        "💰 /balans – Coin balansim\n\n"
+    )
 
-# Yakuniy matnni bitta qilib yuboramiz
-await message.answer(text, parse_mode="HTML")
+    # Agar xabar yozgan odam Admin bo'lsa, matnga admin buyrug'ini qo'shamiz
+    if message.from_user.id == ADMIN_ID:
+        text += "⚙️ /add_item – Yangi tovar qo'shish (Admin)\n"
+
+    # Yakuniy matnni bitta qilib yuboramiz
+    await message.answer(text, parse_mode="HTML")
 
 
 # ─────────────────────────────────────────────────────
@@ -60,7 +61,7 @@ async def cmd_balans(message: Message):
     await message.answer(
         f"💰 <b>Sizning balansingiz:</b>\n\n"
         f"🏅 <b>{coins} Court Coins</b>\n\n"
-        f"O'yinda g'alaba qozonib coin to'plang va /shop da sarflang!"
+        f"O'yinda g'alaba qozonib coin to'plang va /shop da sarflang!",
         parse_mode="HTML"
     )
 
@@ -83,7 +84,7 @@ async def cmd_shop(message: Message):
     if not items:
         await message.answer(
             "🛒 <b>Do'kon hozircha bo'sh.</b>\n\n"
-            "Admin tez orada super kartalar qo'shadi!"
+            "Admin tez orada super kartalar qo'shadi!",
             parse_mode="HTML"
         )
         return
@@ -100,7 +101,7 @@ async def cmd_shop(message: Message):
         )
         buttons.append([
             InlineKeyboardButton(
-                text=f"🛍 {item['name']} — {item['price']} coins"
+                text=f"🛍 {item['name']} — {item['price']} coins",
                 callback_data=f"buy_{item['item_id']}"
             )
         ])
@@ -122,7 +123,7 @@ async def cb_buy_item(call: CallbackQuery):
     if coins < item["price"]:
         await call.answer(
             f"❌ Coinlar yetarli emas!\n"
-            f"Kerak: {item['price']} | Sizda: {coins}"
+            f"Kerak: {item['price']} | Sizda: {coins}",
             show_alert=True
         )
         return
@@ -139,8 +140,8 @@ async def cb_buy_item(call: CallbackQuery):
         f"📦 <b>{item['name']}</b>\n"
         f"💬 {item['description']}\n"
         f"💰 Narxi: <b>{item['price']} coins</b>\n\n"
-        f"Balansingizdan {item['price']} coins hisobdan chiqariladi."
-        parse_mode="HTML"
+        f"Balansingizdan {item['price']} coins hisobdan chiqariladi.",
+        parse_mode="HTML",
         reply_markup=kb
     )
     await call.answer()
@@ -159,12 +160,12 @@ async def cb_confirm_buy(call: CallbackQuery):
             f"📦 <b>{item['name']}</b> sizniki bo'ldi!\n"
             f"💬 <i>{item['description']}</i>\n\n"
             f"💰 Qolgan balans: <b>{coins} coins</b>\n\n"
-            f"Xaridlaringizni /mening_xaridlarim orqali ko'ring."
+            f"Xaridlaringizni /mening_xaridlarim orqali ko'ring.",
             parse_mode="HTML"
         )
     else:
         await call.message.edit_text(
-            "❌ Xarid amalga oshmadi. Coinlar yetarli emas yoki xato yuz berdi."
+            "❌ Xarid amalga oshmadi. Coinlar yetarli emas yoki xato yuz berdi.",
             parse_mode="HTML"
         )
     await call.answer()
@@ -187,7 +188,7 @@ async def cmd_my_purchases(message: Message):
     if not purchases:
         await message.answer(
             "📦 <b>Xaridlaringiz yo'q.</b>\n\n"
-            "O'yinda coin to'plab /shop da super kartalar sotib oling!"
+            "O'yinda coin to'plab /shop da super kartalar sotib oling!",
             parse_mode="HTML"
         )
         return
@@ -215,17 +216,13 @@ async def cmd_ariza(message: Message, bot: Bot):
         await message.answer(
             "📝 <b>Ariza yozish:</b>\n\n"
             "Foydalanish: <code>/ariza [sabab]</code>\n\n"
-            "Misol: <code>/ariza Internetim yo'q, yozma gapira olaman</code>"
+            "Misol: <code>/ariza Internetim yo'q, yozma gapira olaman</code>",
             parse_mode="HTML"
         )
         return
 
     ariza_text = args[1].strip()
 
-    # Faol o'yinni topish (user qaysi o'yinda ekanini bilmaymiz,
-    # shuning uchun user_id orqali player jadvalini qidiramiz)
-    # Bu yerda foydalanuvchi o'yin chat_id sini ham yuborishi mumkin.
-    # Oddiyroq yechim: eng oxirgi faol o'yinda qidirish.
     await message.answer(
         "⏳ Arizangiz tekshirilmoqda...\n"
         "Sudyaga yuborildi, javobni kuting."
@@ -248,10 +245,10 @@ async def cmd_ariza(message: Message, bot: Bot):
             ADMIN_ID,
             f"📨 <b>YANGI ARIZA!</b>\n\n"
             f"👤 <b>Kimdan:</b> {message.from_user.full_name} "
-            f"(@{message.from_user.username or 'username yo\'q'})\n"
+            f"(@{message.from_user.username or 'username yo\\'q'})\n"
             f"🆔 ID: <code>{message.from_user.id}</code>\n\n"
-            f"📝 <b>Ariza matni:</b>\n{ariza_text}"
-            parse_mode="HTML"
+            f"📝 <b>Ariza matni:</b>\n{ariza_text}",
+            parse_mode="HTML",
             reply_markup=kb
         )
     except Exception:
@@ -270,14 +267,14 @@ async def cb_admin_approve_ariza(call: CallbackQuery, bot: Bot):
         await bot.send_message(
             user_id,
             "✅ <b>Arizangiz tasdiqlandi!</b>\n\n"
-            "Jamoangiz navbati kelganda guruh chatiga YOZMA xabar yuborishingiz mumkin."
+            "Jamoangiz navbati kelganda guruh chatiga YOZMA xabar yuborishingiz mumkin.",
             parse_mode="HTML"
         )
     except Exception:
         pass
 
     await call.message.edit_text(
-        call.message.text + "\n\n✅ <b>TASDIQLANDI</b>"
+        call.message.text + "\n\n✅ <b>TASDIQLANDI</b>",
         parse_mode="HTML"
     )
     await call.answer("✅ Ariza tasdiqlandi!")
@@ -295,14 +292,14 @@ async def cb_admin_reject_ariza(call: CallbackQuery, bot: Bot):
         await bot.send_message(
             user_id,
             "❌ <b>Arizangiz rad etildi.</b>\n\n"
-            "Sudya sizning ovozli chat orqali gapirishingizni talab qiladi."
+            "Sudya sizning ovozli chat orqali gapirishingizni talab qiladi.",
             parse_mode="HTML"
         )
     except Exception:
         pass
 
     await call.message.edit_text(
-        call.message.text + "\n\n❌ <b>RAD ETILDI</b>"
+        call.message.text + "\n\n❌ <b>RAD ETILDI</b>",
         parse_mode="HTML"
     )
     await call.answer("❌ Ariza rad etildi.")
@@ -326,7 +323,7 @@ async def cmd_add_item(message: Message):
             "<b>Format:</b>\n"
             "<code>/add_item Nomi | Tavsifi | Narxi | effect_kodi</code>\n\n"
             "<b>Misol:</b>\n"
-            "<code>/add_item Amakingizning Vizitkasi | Tunda haydashdan immunitet | 500 | night_immunity</code>"
+            "<code>/add_item Amakingizning Vizitkasi | Tunda haydashdan immunitet | 500 | night_immunity</code>",
             parse_mode="HTML"
         )
         return
@@ -347,6 +344,6 @@ async def cmd_add_item(message: Message):
         f"📦 Nomi: <b>{name}</b>\n"
         f"💬 Tavsif: {description}\n"
         f"💰 Narxi: <b>{price} coins</b>\n"
-        f"🔑 Effect: <code>{effect_code}</code>"
+        f"🔑 Effect: <code>{effect_code}</code>",
         parse_mode="HTML"
     )
