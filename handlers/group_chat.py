@@ -95,6 +95,10 @@ def _build_judge_kb(game_id: int) -> InlineKeyboardMarkup:
 #  /yangi_ish — Yangi jinoiy ish ochish
 # ══════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════
+#  /yangi_ish — Yangi jinoiy ish ochish (Mavzu bilan)
+# ══════════════════════════════════════════════════════
+
 @router.message(Command("yangi_ish"))
 async def cmd_yangi_ish(message: Message, bot: Bot):
     if message.from_user.id != ADMIN_ID:
@@ -112,6 +116,22 @@ async def cmd_yangi_ish(message: Message, bot: Bot):
         )
         return
 
+    # Buyruqdan keyingi matnni (ish mavzusini) ajratib olamiz
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply(
+            "⚠️ <b>Iltimos, jinoiy ish mavzusini ham yozing!</b>\n\n"
+            "<b>Format:</b>\n"
+            "<code>/yangi_ish Ish nomi | Kulgili tafsilotlar</code>\n\n"
+            "<b>Misol:</b>\n"
+            "<code>/yangi_ish Somsa o'g'riligi | Ali likopchadagi oxirgi somsa va go'shtni so'ramasdan yeb qo'yganlikda ayblanmoqda.</code>",
+            parse_mode="HTML"
+        )
+        return
+
+    ish_mavzusi = args[1].strip()
+
+    # O'yinni bazada yaratamiz
     game_id = await create_game(message.chat.id, message.from_user.id)
     await register_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
 
@@ -121,10 +141,13 @@ async def cmd_yangi_ish(message: Message, bot: Bot):
             [InlineKeyboardButton(text="🖤 Qora Jamoaga Qo'shilish", callback_data=f"join_black_{game_id}")],
         ]
     )
+    
     await message.reply(
         f"🏛️ <b>SUD TIZIMI O'YINI BOSHLANDI!</b>\n\n"
         f"📋 <b>Ish raqami:</b> #{game_id}\n"
-        f"👨‍⚖️ <b>Sudya:</b> {message.from_user.full_name}\n\n"
+        f"👨‍⚖️ <b>Sudya:</b> {message.from_user.full_name}\n"
+        f"🔍 <b>KUN TARTIBIDAGI JINOIY ISH:</b>\n"
+        f"<blockquote>{ish_mavzusi}</blockquote>\n\n"
         f"Ishtirokchilar, quyidagi tugmalar orqali jamoangizni tanlang!\n\n"
         f"👥 <b>Ishtirokchilar ro'yxati:</b>\n<i>Hali hech kim qo'shilmadi...</i>",
         parse_mode="HTML",
