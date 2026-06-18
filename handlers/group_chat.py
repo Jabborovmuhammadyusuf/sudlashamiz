@@ -1671,14 +1671,12 @@ async def _afk_watcher(bot: Bot, game_id: int, chat_id: int):
 
                 try:
                     await bot.send_message(
-                        chat_id,
-                        f"⚡ Yangi Sudya: "
-                        f"<a href='tg://user?id={new_judge['user_id']}'>{nname}</a>"
+                        chat_id=chat_id,
+                        text=f"⚡ Yangi Sudya: <a href='tg://user?id={new_judge['user_id']}'>{nname}</a>",
                         parse_mode="HTML"
-                    )
+                        )
                 except Exception:
-                    pass
-            break  # Watcher tugaydi
+                            pass
 
 
 # ══════════════════════════════════════════════════════
