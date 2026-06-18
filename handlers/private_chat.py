@@ -40,7 +40,7 @@ async def cmd_start_private(message: Message):
         f"  📦 /mening_xaridlarim — Xaridlarim\n"
         f"  📝 /ariza [sabab] — Sudyaga ariza yuborish\n"
         f"  💰 /balans — Coin balansim\n\n"
-        f"{'⚙️ /add_item — Yangi tovar qo'shish (Admin)' if message.from_user.id == ADMIN_ID else ''}",
+        f"{'⚙️ /add_item — Yangi tovar qo'shish (Admin)' if message.from_user.id == ADMIN_ID else ''}"
         parse_mode="HTML"
     )
 
