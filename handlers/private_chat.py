@@ -150,20 +150,22 @@ async def add_coin_for_user(message: Message):
         amount = int(args[1])     
         target_id = int(args[2])  
         
-        async with aiosqlite.connect(DB_PATH) as db:
-            # 1. Birinchi bo'lib tekshiramiz: foydalanuvchi bazada bormi?
+        import aiosqlite
+        # DB_PATH o'rniga to'g'ridan-to'g'ri loyihangizdagi baza fayliga yo'l ko'rsatamiz:
+        # Faylingiz 'database' papkasida bo'lgani uchun 'database/database.db' deb yozdik.
+        # Agar fayl nomi boshqacha bo'lsa (masalan bot.db), 'database/bot.db' qilib o'zgartiring.
+        db_file_path = "database/database.db" 
+        
+        async with aiosqlite.connect(db_file_path) as db:
             async with db.execute("SELECT 1 FROM users WHERE user_id = ?", (target_id,)) as cursor:
                 user_exists = await cursor.fetchone()
             
             if user_exists:
-                # Agar bor bo'lsa, ko'yinni shunchaki qo'shamiz
                 await db.execute(
                     "UPDATE users SET coins = coins + ? WHERE user_id = ?",
                     (amount, target_id)
                 )
             else:
-                # Agar yo'q bo'lsa, yangi qator ochib, ko'yinni yozamiz
-                # (Eslatma: jadvalingizda boshqa majburiy ustunlar bo'lsa, ularni ham qo'shish kerak bo'lishi mumkin)
                 await db.execute(
                     "INSERT INTO users (user_id, coins) VALUES (?, ?)",
                     (target_id, amount)
