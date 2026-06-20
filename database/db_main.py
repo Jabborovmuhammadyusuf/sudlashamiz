@@ -194,39 +194,14 @@ async def get_user(user_id: int) -> Optional[dict]:
             return dict(row) if row else None
 
 
-from aiogram import Router, F
-from aiogram.types import Message
-from aiogram.filters import Command
-from config import ADMIN_ID 
+async def add_coins(user_id: int, amount: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE users SET coins = coins + ? WHERE user_id = ?",
+            (amount, user_id)
+        )
+        await db.commit()
 
-
-router = Router()
-
-@router.message(Command("add_coin"))
-async def add_coin_for_admin(message: Message):
-    # Faqat bot admini ishlata olishi uchun tekshiruv
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("❌ Bu buyruq faqat bot admini uchun!")
-        return
-
-    try:
-        args = message.text.split()
-        if len(args) < 2:
-            await message.answer("⚠️ Miqdorni kiriting. Misol: `/add_coin 5000`")
-            return
-            
-        amount = int(args[1])
-        user_id = message.from_user.id
-        
-        # db_main ichidagi haqiqiy funksiyani chaqiramiz
-        await add_coins(user_id, amount)
-        
-        await message.answer(f"✅ Hisobingizga muvaffaqiyatli {amount} ko'yin qo'shildi!")
-        
-    except ValueError:
-        await message.answer("❌ Miqdor faqat son bo'lishi kerak!")
-    except Exception as e:
-        await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
 
 async def deduct_coins(user_id: int, amount: int) -> bool:
     """Coinlarni ayiradi. Yetarli bo'lmasa False qaytaradi."""
