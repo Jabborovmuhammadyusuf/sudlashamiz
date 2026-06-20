@@ -151,12 +151,11 @@ async def add_coin_for_user(message: Message):
         target_id = int(args[2])  
         
         import aiosqlite
-        # DB_PATH o'rniga to'g'ridan-to'g'ri loyihangizdagi baza fayliga yo'l ko'rsatamiz:
-        # Faylingiz 'database' papkasida bo'lgani uchun 'database/database.db' deb yozdik.
-        # Agar fayl nomi boshqacha bo'lsa (masalan bot.db), 'database/bot.db' qilib o'zgartiring.
-        db_file_path = "database/database.db" 
+        # Aylanma import (Circular Import) bo'lmasligi uchun 
+        # haqiqiy DB_PATH o'zgaruvchisini funksiya ichida chaqiramiz:
+        from database.db_main import DB_PATH
         
-        async with aiosqlite.connect(db_file_path) as db:
+        async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute("SELECT 1 FROM users WHERE user_id = ?", (target_id,)) as cursor:
                 user_exists = await cursor.fetchone()
             
@@ -182,4 +181,5 @@ async def add_coin_for_user(message: Message):
     except ValueError:
         await message.answer("❌ Miqdor va Telegram ID faqat sonlardan iborat bo'lishi kerak!")
     except Exception as e:
+        await message.answer(f"❌ Kutilmagan xatolik yuz berdi: {str(e)}")
         await message.answer(f"❌ Kutilmagan xatolik yuz berdi: {str(e)}")
