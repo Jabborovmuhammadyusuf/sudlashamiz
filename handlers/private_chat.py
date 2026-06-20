@@ -15,7 +15,7 @@
 # faqat birinchisi javob beradi — bu sokin, ko'rinmas bug edi).
 #
 # Endi do'kon MANTIG'I FAQAT shop.py da yashaydi.
-
+import aiosqlite
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
