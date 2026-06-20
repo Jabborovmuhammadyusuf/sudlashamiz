@@ -130,7 +130,7 @@ from aiogram.filters import Command
 # config.py faylida ADMIN_ID o'zgaruvchisi bor deb hisoblaymiz
 from config import ADMIN_ID 
 # db.py faylidagi bazani yangilash funksiyasi (loyihangizga qarab nomlang)
-from db import update_user_balance 
+from db_main import update_user_balance 
 
 router = Router()
 
