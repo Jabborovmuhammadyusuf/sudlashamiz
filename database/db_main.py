@@ -317,11 +317,31 @@ async def set_current_turn(game_id: int, team: str):
 
 
 async def increment_round(game_id: int):
+    """
+    Keyingi raundga o'tkazadi VA shu raundga tegishli barcha
+    bayroqlarni (dalil, ball) tozalaydi.
+    MUHIM: bu funksiya chaqirilmasa, eski 'dalil_used'/'scored'
+    bayroqlari qoladi va keyingi raundda hech kim dalil/ball
+    bera olmay qoladi — shuning uchun har joyda (next_round,
+    start_night, night_timer) albatta shu funksiya orqali o'tiladi.
+    """
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "UPDATE games SET round_number = round_number + 1, "
-            "white_dalil_used = 0, black_dalil_used = 0 "
+            "white_dalil_used = 0, black_dalil_used = 0, "
+            "white_scored = 0, black_scored = 0 "
             "WHERE game_id = ?",
+            (game_id,)
+        )
+        await db.commit()
+
+
+async def reset_round_flags(game_id: int):
+    """Joriy raund uchun dalil/ball bayroqlarini (raund raqamini oshirmasdan) tozalaydi."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE games SET white_dalil_used = 0, black_dalil_used = 0, "
+            "white_scored = 0, black_scored = 0 WHERE game_id = ?",
             (game_id,)
         )
         await db.commit()
@@ -400,15 +420,53 @@ async def mark_dalil_used(game_id: int, team: str):
         await db.commit()
 
 
-async def add_score(game_id: int, team: str, points: int):
-    """Jamoaga ball qo'shish (1-5 chegarasi boshqaruvchi tomonidan tekshiriladi)."""
-    col = "white_score" if team == "white" else "black_score"
+async def add_score(game_id: int, team: str, points: int) -> bool:
+    """
+    Jamoaga ball qo'shadi — FAQAT shu raundda hali ball berilmagan bo'lsa.
+    Anti-duplicate: bir jamoaga bir raundda faqat 1 marta ball berish mumkin.
+    Qaytaradi: True = muvaffaqiyatli qo'shildi, False = bu raundda allaqachon ball berilgan.
+    """
+    score_col = "white_score" if team == "white" else "black_score"
+    scored_col = "white_scored" if team == "white" else "black_scored"
+
+    game = await get_game_by_id(game_id)
+    if not game:
+        return False
+    if game.get(scored_col):
+        return False  # bu raundda allaqachon ball berilgan — qayta berib bo'lmaydi
+
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            f"UPDATE games SET {col} = {col} + ? WHERE game_id = ?",
+            f"UPDATE games SET {score_col} = {score_col} + ?, {scored_col} = 1 "
+            f"WHERE game_id = ?",
             (points, game_id)
         )
         await db.commit()
+    return True
+
+
+async def add_bonus_score(game_id: int, team: str, points: int):
+    """
+    Karta effektlari (masalan 'Eski sanali hujjat') uchun ball qo'shadi.
+    add_score()'dan farqi: bu funksiya 'scored' bayrog'iga tegmaydi,
+    shuning uchun Sudya hali ham keyinroq o'z ballini bera oladi —
+    aks holda bonus karta Sudyaning ball berish imkoniyatini bloklab qo'yardi.
+    """
+    score_col = "white_score" if team == "white" else "black_score"
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            f"UPDATE games SET {score_col} = {score_col} + ? WHERE game_id = ?",
+            (points, game_id)
+        )
+        await db.commit()
+
+
+async def both_teams_scored(game_id: int) -> bool:
+    """Joriy raundda ikkala jamoaga ham ball berilganmi?"""
+    game = await get_game_by_id(game_id)
+    if not game:
+        return False
+    return bool(game.get("white_scored")) and bool(game.get("black_scored"))
 
 
 async def save_round_score(game_id: int, round_num: int,
