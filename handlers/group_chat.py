@@ -35,8 +35,10 @@ from database.db_main import (
     register_user, save_ariza, approve_ariza, get_pending_arizalar,
     get_game_by_id, set_voice_chat_verified, set_text_mode,
     increment_voice_warn, update_judge_action_time, transfer_judge,
-    mark_dalil_used, add_score, save_round_score, get_round_scores,
-    increment_round, set_accused, set_night_blocked, set_night_protected,
+    mark_dalil_used, add_score, add_bonus_score, both_teams_scored,
+    save_round_score, get_round_scores,
+    increment_round, reset_round_flags, set_accused,
+    set_night_blocked, set_night_protected,
     set_player_immunity, set_player_bail, reset_night_statuses,
     save_night_action, get_night_actions, mark_night_action_processed,
     get_player_night_action, cast_impeachment_vote,
@@ -488,13 +490,11 @@ async def cb_join_team(call: CallbackQuery):
     black_list = [p for p in all_players if p["team"] == "black"]
 
     white_text = "\n".join([
-        f" • <a href='tg://user?id={p['user_id']}'>"
-        f"O'yinchi {i+1}</a>"
+        f"  • <a href='tg://user?id={p['user_id']}'>O'yinchi {i+1}</a>"
         for i, p in enumerate(white_list)
     ]) or "  <i>Bo'sh</i>"
     black_text = "\n".join([
-        f" • <a href='tg://user?id={p['user_id']}'>"
-        f"O'yinchi {i+1}</a>"
+        f"  • <a href='tg://user?id={p['user_id']}'>O'yinchi {i+1}</a>"
         for i, p in enumerate(black_list)
     ]) or "  <i>Bo'sh</i>"
 
@@ -749,7 +749,11 @@ async def cmd_dalil(message: Message, bot: Bot):
         )
         return
 
-    dalil_text = message.text[6:].strip() or "(Matn yo'q)"
+    # Matnni "!dalil" so'zidan keyin ajratib olamiz (magic index o'rniga
+    # split() ishlatamiz — bu "!dalil", "!dalil " va "!dalilmatn" kabi
+    # holatlarda ham ishonchli ishlaydi)
+    parts = message.text.split(maxsplit=1)
+    dalil_text = parts[1].strip() if len(parts) > 1 else "(Matn yo'q)"
     team_label = "⚖️ OQ JAMOA" if team == "white" else "🖤 QORA JAMOA"
 
     caption = (
@@ -778,7 +782,28 @@ async def cmd_dalil(message: Message, bot: Bot):
     # Old Document kartasi tekshiruvi
     await _apply_old_document_bonus(game_id, team)
 
-    # 120 soniya taymer
+    # Agar bu — shu raunddagi IKKINCHI dalil bo'lsa (ikkala jamoa ham
+    # allaqachon dalil bergan), ball berish panelini DARHOL chiqaramiz —
+    # yana 120 soniya kutishning hojati yo'q.
+    game_fresh = await get_game_by_id(game_id)
+    if game_fresh["white_dalil_used"] and game_fresh["black_dalil_used"]:
+        await asyncio.sleep(3)  # qisqa pauza — oxirgi xabarni o'qib ulgurish uchun
+        await mute_all_players(bot, message.chat.id, game_id)
+        try:
+            await bot.send_message(
+                message.chat.id,
+                f"⏰ <b>Ikkala jamoa ham dalilini bildirdi!</b>\n\n"
+                f"👨‍⚖️ Sudya, iltimos ball bering:",
+                parse_mode="HTML",
+                reply_markup=_scoring_kb(game_id)
+            )
+        except Exception as e:
+            logger.warning(f"Ikkinchi dalil ball paneli xatosi: {e}")
+        return
+
+    # Bu — raundning BIRINCHI dalili. 120 soniyalik taymer ishga tushiramiz —
+    # shu vaqt ichida bu jamoa dalilini sharhlaydi, keyin navbat ikkinchi
+    # jamoaga o'tadi.
     asyncio.create_task(
         _dalil_timer(bot, message.chat.id, game_id, dalil_msg.message_id, team)
     )
@@ -786,7 +811,6 @@ async def cmd_dalil(message: Message, bot: Bot):
 
 async def _apply_old_document_bonus(game_id: int, team: str):
     """'Eski sanali hujjat' kartasi — dalil berilganda +2 avtomatik qo'shiladi."""
-    game = await get_game_by_id(game_id)
     players = await get_team_players(game_id, team)
     for p in players:
         purchases = await get_user_purchases(p["user_id"], unused_only=True)
@@ -794,7 +818,9 @@ async def _apply_old_document_bonus(game_id: int, team: str):
             (x for x in purchases if x["effect_code"] == "old_document"), None
         )
         if doc_card:
-            await add_score(game_id, team, 2)
+            # add_bonus_score ishlatamiz — bu Sudyaning keyinroq ball
+            # berish imkoniyatini bloklab qo'ymaydi (add_score'dan farqli)
+            await add_bonus_score(game_id, team, 2)
             await mark_item_used(doc_card["id"], game_id)
             logger.info(
                 f"Eski sanali hujjat: {p['user_id']} jamoasiga +2 ball qo'shildi"
@@ -806,43 +832,82 @@ async def _dalil_timer(
     bot: Bot, chat_id: int, game_id: int,
     dalil_msg_id: int, team: str
 ):
-    """120 soniya o'tgach, ikkala jamoani jim qiladi va ball berish panelini chiqaradi."""
+    """
+    Birinchi dalil berilgandan 120 soniya o'tgach ishga tushadi.
+    Bu vaqt ichida ikkinchi jamoa ham dalil bergan bo'lishi mumkin —
+    agar shunday bo'lsa (cmd_dalil ichida darhol ball paneli chiqarilgani
+    uchun) bu yerda hech narsa qilmaymiz. Aks holda ikkinchi jamoaga
+    so'z beramiz va unga ham YANGI 120 soniyalik taymer beramiz.
+    """
     await asyncio.sleep(DALIL_TIMER_SECONDS)
 
     game = await get_game_by_id(game_id)
     if not game or game["status"] != "active":
         return
 
+    if game["white_dalil_used"] and game["black_dalil_used"]:
+        # Ikkinchi jamoa allaqachon dalil berib, cmd_dalil o'zi ball
+        # panelini chiqargan — bu yerda qaytadan ishlov bermaymiz.
+        return
+
     await mute_all_players(bot, chat_id, game_id)
 
-    # Ikkala dalil ishlatildimi? Ball berish vaqti!
-    if game["white_dalil_used"] and game["black_dalil_used"]:
-        try:
-            await bot.send_message(
-                chat_id,
-                f"⏰ <b>Ikkala jamoa ham dalilini bildirdi!</b>\n\n"
-                f"👨‍⚖️ Sudya, iltimos ball bering:",
-                parse_mode="HTML",
-                reply_markup=_scoring_kb(game_id)
-            )
-        except Exception as e:
-            logger.warning(f"_dalil_timer xato: {e}")
-    else:
-        # Faqat bir jamoa dalil berdi — boshqa jamoani rag'batlantirish
-        remaining = "black" if team == "white" else "white"
-        label = "🖤 QORA JAMOA" if remaining == "black" else "⚖️ OQ JAMOA"
-        try:
-            await bot.send_message(
-                chat_id,
-                f"⏳ Taymer tugadi.\n{label} hali dalil bermadi.\n"
-                f"<code>!dalil [matn]</code> bilan dalil bering!",
-                parse_mode="HTML"
-            )
-            # Bu jamoaga so'z beramiz
-            await mute_team(bot, chat_id, game_id, remaining, False)
-            # Yana 120 soniya yangi taymer (faqat bir marta)
-        except Exception:
-            pass
+    # Faqat bir jamoa dalil berdi — ikkinchi jamoaga navbat beramiz
+    remaining = "black" if team == "white" else "white"
+    label = "🖤 QORA JAMOA" if remaining == "black" else "⚖️ OQ JAMOA"
+    try:
+        await bot.send_message(
+            chat_id,
+            f"⏳ Taymer tugadi.\n{label} hali dalil bermadi.\n"
+            f"<code>!dalil [matn]</code> bilan <b>120 soniya ichida</b> dalil bering!\n"
+            f"Aks holda vaqt tugagach ball berish bosqichiga o'tiladi.",
+            parse_mode="HTML"
+        )
+        await mute_team(bot, chat_id, game_id, remaining, False)
+
+        # Ikkinchi jamoa uchun ham yangi taymer (bu — eski versiyadagi
+        # asosiy xato edi: ikkinchi taymer hech qachon ishga tushmasdi,
+        # natijada o'yin abadiy qotib qolardi).
+        asyncio.create_task(
+            _second_team_grace_timer(bot, chat_id, game_id, remaining)
+        )
+    except Exception as e:
+        logger.warning(f"_dalil_timer (remaining team) xato: {e}")
+
+
+async def _second_team_grace_timer(bot: Bot, chat_id: int, game_id: int, team: str):
+    """
+    Ikkinchi jamoaga berilgan qo'shimcha 120 soniya.
+    Agar shu vaqt ichida ham dalil berilmasa — bot avtomatik ball
+    berish panelini chiqaradi (0 ball bilan davom etish imkonini beradi),
+    shunda o'yin hech qachon abadiy qotib qolmaydi.
+    """
+    await asyncio.sleep(DALIL_TIMER_SECONDS)
+
+    game = await get_game_by_id(game_id)
+    if not game or game["status"] != "active":
+        return
+
+    col_used = "white_dalil_used" if team == "white" else "black_dalil_used"
+    await mute_all_players(bot, chat_id, game_id)
+
+    if game[col_used]:
+        # Bu jamoa dalil bergan ekan — !dalil handler allaqachon o'z
+        # taymerini ishga tushirgan, bu yerda qaytadan ishlov bermaymiz
+        return
+
+    # Ikkinchi jamoa ham vaqtida dalil bermadi — baribir ball bosqichiga o'tamiz
+    try:
+        await bot.send_message(
+            chat_id,
+            f"⏰ <b>Vaqt tugadi!</b>\n\n"
+            f"Bir jamoa dalil keltirmadi. Sudya baribir ball bera oladi "
+            f"(dalil bermagan jamoaga past ball qo'yish tavsiya etiladi):",
+            parse_mode="HTML",
+            reply_markup=_scoring_kb(game_id)
+        )
+    except Exception as e:
+        logger.warning(f"_second_team_grace_timer xato: {e}")
 
 
 # ══════════════════════════════════════════════════════
@@ -918,18 +983,24 @@ async def cb_score(call: CallbackQuery, bot: Bot):
         await call.answer("⛔ Faqat Sudya ball beradi!", show_alert=True)
         return
 
-    # Anti-cheat: 1-5 oralig'ida (regex allaqachon ta'minlagan)
-    if not (1 <= points <= 5):
-        await call.answer("⛔ Ball 1-5 oralig'ida bo'lishi kerak!", show_alert=True)
-        return
-
     await update_judge_action_time(game_id)
-    await add_score(game_id, team, points)
 
-    game_updated = await get_game_by_id(game_id)
+    # add_score endi anti-duplicate tekshiruvini o'zi bajaradi:
+    # agar shu jamoaga shu raundda allaqachon ball berilgan bo'lsa, False qaytaradi.
+    success = await add_score(game_id, team, points)
     team_label = "⚖️ OQ JAMOA" if team == "white" else "🖤 QORA JAMOA"
 
-    await call.message.reply(
+    if not success:
+        await call.answer(
+            f"⚠️ {team_label} ga bu raundda allaqachon ball berilgan! "
+            f"Qayta berib bo'lmaydi.",
+            show_alert=True
+        )
+        return
+
+    game_updated = await get_game_by_id(game_id)
+
+    await call.message.edit_text(
         f"✅ <b>{team_label}</b> ga <b>+{points} ball</b> berildi!\n\n"
         f"📊 Umumiy: ⚖️ {game_updated['white_score']} | "
         f"🖤 {game_updated['black_score']}",
@@ -937,26 +1008,30 @@ async def cb_score(call: CallbackQuery, bot: Bot):
     )
     await call.answer(f"✅ +{points} ball berildi!")
 
-    # Ikkala jamoaga ball berildimi? Keyingi raundga o'tish
-    # Bu yerda sodda tekshiruv: Sudya har ikkala jamoaga ball bergach raund tugaydi
-    # Amalda Sudya avval birga, keyin ikkinchiga ball beradi
-    # Raund tugatish uchun "Raundni yakunlash" tugmasi qo'shamiz
-    kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(
-                text=f"➡️ Keyingi raundga o'tish",
-                callback_data=f"next_round_{game_id}"
-            )],
-            [InlineKeyboardButton(
-                text="⚖️ O'yinni yakunlash",
-                callback_data=f"end_game_{game_id}"
-            )]
-        ]
-    )
-    await call.message.reply(
-        f"👨‍⚖️ Ball berildi. Keyingi raundni boshlaysizmi?",
-        reply_markup=kb
-    )
+    # Ikkala jamoaga ham ball berilganmi? — avtomatik tekshiramiz
+    if await both_teams_scored(game_id):
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="➡️ Keyingi raundga o'tish",
+                    callback_data=f"next_round_{game_id}"
+                )],
+                [InlineKeyboardButton(
+                    text="⚖️ O'yinni yakunlash",
+                    callback_data=f"end_game_{game_id}"
+                )]
+            ]
+        )
+        await call.message.reply(
+            f"👨‍⚖️ Ikkala jamoaga ham ball berildi. Keyingi raundga o'tasizmi?",
+            reply_markup=kb
+        )
+    else:
+        # Faqat bir jamoaga ball berilgan — ikkinchisini eslatamiz
+        waiting_team = "🖤 Qoralarga" if team == "white" else "⚖️ Oqlarga"
+        await call.message.reply(
+            f"👨‍⚖️ Endi {waiting_team} ham ball bering."
+        )
 
 
 # ══════════════════════════════════════════════════════
@@ -972,18 +1047,30 @@ async def cb_next_round(call: CallbackQuery, bot: Bot):
         await call.answer("⛔ Faqat Sudya!", show_alert=True)
         return
 
+    await _start_night_phase(bot, call.message, game)
+    await call.answer()
+
+
+async def _start_night_phase(bot: Bot, message: Message, game: dict):
+    """
+    Tun fazasiga o'tkazuvchi YAGONA funksiya.
+    Ilgari bu kod 'cb_next_round' va 'cb_start_night' ichida
+    ikki marta nusxalangan edi — biri tuzatilsa ikkinchisi unutilib
+    qolish xavfi bor edi (masalan: raund flag'larini reset qilish
+    faqat birida bor edi). Endi ikkala callback shu funksiyani chaqiradi.
+    """
+    game_id = game["game_id"]
     await update_judge_action_time(game_id)
 
-    # Joriy raund balllarini saqlash
+    # Joriy raund balllarini tarixga saqlaymiz
     await save_round_score(
         game_id, game["round_number"],
         game["white_score"], game["black_score"]
     )
 
     if game["round_number"] >= MAX_ROUNDS:
-        # 5-raund tugadi — natijani tekshirish
-        await _check_final_result(bot, call.message, game)
-        await call.answer()
+        # 5-raund tugadi — natijani tekshirish (ball berilmagan bo'lsa ham)
+        await _check_final_result(bot, message, game)
         return
 
     # Tun fazasiga o'tish
@@ -991,7 +1078,7 @@ async def cb_next_round(call: CallbackQuery, bot: Bot):
     await mute_all_players(bot, game["chat_id"], game_id)
     await reset_night_statuses(game_id)
 
-    await call.message.reply(
+    await message.reply(
         f"🌙 <b>YOPIQ TERGOV BOSQICHI ({game['round_number']}/{MAX_ROUNDS})</b>\n\n"
         f"Tungi faoliyat vaqti!\n\n"
         f"🔍 Detektiv, Ekspert, Soxta Guvoh, Arxiv Xodimi va Pristav —\n"
@@ -1000,14 +1087,10 @@ async def cb_next_round(call: CallbackQuery, bot: Bot):
         parse_mode="HTML"
     )
 
-    # Har bir rol egasiga lichkada tun panelini yuborish
-    await _send_night_panels(call.bot, game_id)
-
-    # Tun taymeri
+    await _send_night_panels(bot, game_id)
     asyncio.create_task(
-        _night_timer(bot, game_id, game["chat_id"], call.message)
+        _night_timer(bot, game_id, game["chat_id"], message)
     )
-    await call.answer()
 
 
 async def _send_night_panels(bot: Bot, game_id: int):
@@ -1671,12 +1754,14 @@ async def _afk_watcher(bot: Bot, game_id: int, chat_id: int):
 
                 try:
                     await bot.send_message(
-                        chat_id=chat_id,
-                        text=f"⚡ Yangi Sudya: <a href='tg://user?id={new_judge['user_id']}'>{nname}</a>",
+                        chat_id,
+                        f"⚡ Yangi Sudya: "
+                        f"<a href='tg://user?id={new_judge['user_id']}'>{nname}</a>",
                         parse_mode="HTML"
-                        )
+                    )
                 except Exception:
-                            pass
+                    pass
+            break  # Watcher tugaydi
 
 
 # ══════════════════════════════════════════════════════
@@ -1685,43 +1770,31 @@ async def _afk_watcher(bot: Bot, game_id: int, chat_id: int):
 
 @router.callback_query(F.data.startswith("start_night_"))
 async def cb_start_night(call: CallbackQuery, bot: Bot):
+    """
+    Sudya bosh boshqaruv panelidagi '🌙 Tun fazasini boshlash' tugmasi.
+    Endi cb_next_round bilan bir xil umumiy funksiyani chaqiradi,
+    shuning uchun ikkalasi har doim sinxron ishlaydi.
+    """
     game_id = int(call.data.split("_")[2])
     game = await get_game_by_id(game_id)
     if not game or call.from_user.id != game["judge_id"]:
         await call.answer("⛔ Faqat Sudya!", show_alert=True)
         return
 
-    await update_judge_action_time(game_id)
+    # Ogohlantirish: agar Sudya hali ikkala jamoaga ham ball bermagan
+    # bo'lsa, lekin baribir tunni boshlamoqchi bo'lsa — ogohlantiramiz,
+    # chunki bu joriy raund ballarini chala holda "muzlatib" qo'yadi.
+    if not await both_teams_scored(game_id) and (game["white_dalil_used"] or game["black_dalil_used"]):
+        await call.answer(
+            "⚠️ Hali ikkala jamoaga ham ball berilmagan! "
+            "Baribir davom etmoqchimisiz — tugmani yana bosing.",
+            show_alert=True
+        )
+        # Birinchi bosishda ogohlantiramiz, lekin bloklamaymiz —
+        # Sudya ataylab o'tkazib yuborishi mumkin bo'lgan holatlar bor
+        # (masalan jamoa umuman dalil bermagan).
 
-    if game["round_number"] >= MAX_ROUNDS:
-        await _check_final_result(bot, call.message, game)
-        await call.answer()
-        return
-
-    # Joriy raund balllarini saqlash
-    await save_round_score(
-        game_id, game["round_number"],
-        game["white_score"], game["black_score"]
-    )
-
-    await update_game_phase(game_id, "night")
-    await mute_all_players(bot, game["chat_id"], game_id)
-    await reset_night_statuses(game_id)
-
-    await call.message.reply(
-        f"🌙 <b>YOPIQ TERGOV BOSHLANDI!</b>\n\n"
-        f"Raund {game['round_number']} balllar:\n"
-        f"⚖️ Oq: <b>{game['white_score']}</b> | "
-        f"🖤 Qora: <b>{game['black_score']}</b>\n\n"
-        f"Rol egalari lichkada harakatlarini bajarsin.\n"
-        f"⏰ 60 soniyadan so'ng yangi kun boshlanadi.",
-        parse_mode="HTML"
-    )
-
-    await _send_night_panels(call.bot, game_id)
-    asyncio.create_task(
-        _night_timer(bot, game_id, game["chat_id"], call.message)
-    )
+    await _start_night_phase(bot, call.message, game)
     await call.answer()
 
 
