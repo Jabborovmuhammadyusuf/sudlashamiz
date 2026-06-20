@@ -50,7 +50,8 @@ async def cmd_start_private(message: Message):
         "📝 /ariza [sabab] – Sudyaga ariza yuborish\n"
         "💰 /balans – Coin balansim\n\n"
         "🏛️ O'yinni boshlash uchun guruhda <code>/yangi_ish</code> yozing!\n"
-        "🤖 Yordam uchun bot adminiga murojat qiling : [@dasturchi_uzn1]"
+        "🤖 Yordam uchun bot adminiga murojat qiling : [@dasturchi_uzn1]\n\n"
+        "Bizning asosiy guruhimiz kirib o'yinga qo'shiling : https://t.me/sudlashamizmi "
     )
 
     if message.from_user.id == ADMIN_ID:
