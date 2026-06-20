@@ -183,3 +183,65 @@ async def add_coin_for_user(message: Message):
     except Exception as e:
         await message.answer(f"❌ Kutilmagan xatolik yuz berdi: {str(e)}")
         await message.answer(f"❌ Kutilmagan xatolik yuz berdi: {str(e)}")
+from aiogram.filters import Command
+from aiogram.types import Message
+from config import ADMIN_ID
+import asyncio
+
+@router.message(Command("send_all"))
+async def send_message_to_all_users(message: Message):
+    # 1. Faqat siz (Admin) ishlata olishingiz uchun tekshiruv
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("❌ Bu buyruq faqat bot admini uchun!")
+        return
+
+    # Buyruq matnini tekshirish (kamida bitta so'z bo'lishi kerak)
+    # /send_all xabar_matni
+    text_to_send = message.text.replace("/send_all", "").strip()
+    
+    if not text_to_send:
+        await message.answer(
+            "⚠️ Yubormoqchi bo'lgan xabaringizni kiriting!\n"
+            "Misol: `/send_all Assalomu alaykum, botimizda yangi funksiya qo'shildi!`"
+        )
+        return
+
+    status_msg = await message.answer("🔄 Ommaviy xabar yuborish boshlandi...")
+
+    import aiosqlite
+    from database.db_main import DB_PATH
+
+    success_count = 0
+    failed_count = 0
+
+    try:
+        # 2. Bazadan barcha foydalanuvchilarning ID larini olamiz
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT user_id FROM users") as cursor:
+                rows = await cursor.fetchall()
+
+        if not rows:
+            await status_msg.edit_text("❌ Bazada hech qanday foydalanuvchi topilmadi.")
+            return
+
+        # 3. Har bir foydalanuvchiga ketma-ket xabar yuboramiz
+        for row in rows:
+            user_id = row[0]
+            try:
+                await message.bot.send_message(chat_id=user_id, text=text_to_send)
+                success_count += 1
+                # Telegram flood limitiga tushib qolmaslik uchun qisqa tanaffus
+                await asyncio.sleep(0.05) 
+            except Exception:
+                # Foydalanuvchi botni bloklagan bo'lsa yoki o'chirib yuborgan bo'lsa xato beradi
+                failed_count += 1
+
+        # 4. Yakuniy hisobot
+        await status_msg.edit_text(
+            f"🚀 **Xabar yuborish yakunlandi!**\n\n"
+            f"✅ Muvaffaqiyatli yetkazildi: {success_count} ta foydalanuvchiga\n"
+            f"❌ Yetkazilmadi (bloklaganlar): {failed_count} ta"
+        )
+
+    except Exception as e:
+        await status_msg.edit_text(f"❌ Xabar yuborishda xatolik: {str(e)}")
