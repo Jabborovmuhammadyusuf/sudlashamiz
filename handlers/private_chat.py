@@ -123,26 +123,24 @@ async def cmd_ariza(message: Message, bot: Bot):
         "Agar bir nechta guruhda o'ynayotgan bo'lsangiz, har biriga alohida murojaat qiling.</i>",
         parse_mode="HTML"
     )
+import aiosqlite
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
-
-# config.py faylida ADMIN_ID o'zgaruvchisi bor deb hisoblaymiz
-from config import ADMIN_ID 
-# db.py faylidagi bazani yangilash funksiyasi (loyihangizga qarab nomlang)
-from database.db_main import add_coins  # To'g'rilangan import
-
+from config import ADMIN_ID
+# db_main ichidagi DB_PATH (baza fayli yo'li) ni ulaymiz. 
+# Agar bu ham import xatosi bersa, o'rniga to'g'ridan-to'g'ri "database.db" (yoki baza nomi) deb yozish mumkin.
+from database.db_main import DB_PATH 
 
 router = Router()
 
 @router.message(Command("add_coin"))
 async def add_coin_for_admin(message: Message):
-    # Faqat siz ishlata olishingiz uchun tekshiruv
+    # Faqat bot admini ishlata olishi uchun tekshiruv
     if message.from_user.id != ADMIN_ID:
         await message.answer("❌ Bu buyruq faqat bot admini uchun!")
         return
 
-    # Buyruq formati: /add_coin 5000
     try:
         args = message.text.split()
         if len(args) < 2:
@@ -150,23 +148,22 @@ async def add_coin_for_admin(message: Message):
             return
             
         amount = int(args[1])
+        user_id = message.from_user.id
         
-        # Bazada balansni yangilash (O'z ma'lumotlar bazasi funksiyangizga moslang)
-        # users jadvalidagi balansni yangilaydi
-        await update_user_balance(message.from_user.id, amount)
+        # Hech qanday funksiyasiz, to'g'ridan-to'g'ri shu yerda sqlite bazasini yangilash
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE users SET coins = coins + ? WHERE user_id = ?",
+                (amount, user_id)
+            )
+            await db.commit()
         
-        await message.answer(f"✅ Hisobingizga muvaffaqiyatli {amount} Court Coins qo'shildi!")
+        await message.answer(f"✅ Hisobingizga muvaffaqiyatli {amount} ko'yin qo'shildi!")
         
     except ValueError:
         await message.answer("❌ Miqdor faqat son bo'lishi kerak!")
     except Exception as e:
         await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
-    # Eslatma: Real ariza yo'naltirish guruh-darajasida ishlaydi —
-    # group_chat.py dagi /arz_sudya va Sudyaning tasdiqlash panellari orqali.
-    # Bu yerda faqat matnni saqlab qo'yamiz, Sudya buni qo'lda ko'rishi kerak
-    # bo'lsa, guruhda alohida ko'rsatish mantig'i qo'shilishi mumkin.
-
-
 # ─────────────────────────────────────────────────────
 #  /add_item — Admin: yangi tovar qo'shish
 #  (Eslatma: bu funksiya endi handlers/shop.py da ham mavjud va
