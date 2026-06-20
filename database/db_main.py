@@ -198,7 +198,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command
 from config import ADMIN_ID 
-from database.db_main import add_coins  # To'g'rilangan import
+
 
 router = Router()
 
