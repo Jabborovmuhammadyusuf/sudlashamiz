@@ -503,7 +503,7 @@ async def cmd_insayd(message: Message, bot: Bot):
     # Foydalanuvchi guruh chat_id ni bilishi kerak
     await message.answer(
         "📍 Endi qaysi guruhga yuborishni ko'rsating:\n"
-        f"Format: <code>!insayd_send_{purchase_id}_{{}chat_id{{}} {insayd_text}</code>\n\n"
+        f"Format: <code>!insayd_send_{purchase_id}_[chat_id] {insayd_text}</code>\n\n"
         f"<i>Guruh chat_id ni bilmasangiz, guruhda /my_game_id buyrug'ini yuboring.</i>",
         parse_mode="HTML"
     )
