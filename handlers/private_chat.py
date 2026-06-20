@@ -1897,3 +1897,58 @@ async def on_member_left(message: Message, bot: Bot):
         f"O'yinchi {user_id} guruhni tark etdi, o'yindan chiqarildi. "
         f"Game ID: {game['game_id']}"
     )
+import aiosqlite
+from aiogram.filters import Command
+from aiogram.types import Message
+from config import ADMIN_ID
+# db_main ichidagi ma'lumotlar bazasi fayl yo'lini olamiz
+from database.db_main import DB_PATH 
+
+@router.message(Command("add_coin"))
+async def add_coin_for_user(message: Message):
+    # 1. Faqat siz (Admin) ishlata olishingiz uchun tekshiruv
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("❌ Bu buyruq faqat bot admini uchun!")
+        return
+
+    try:
+        # Buyruq formati: /add_coin 5000 827868768656
+        args = message.text.split()
+        
+        # Argumentlar sonini tekshirish
+        if len(args) < 3:
+            await message.answer(
+                "⚠️ Format noto'g'ri!\n"
+                "Misol: `/add_coin 5000 827868768656`"
+            )
+            return
+            
+        amount = int(args[1])     # Qo'shiladigan ko'yin miqdori
+        target_id = int(args[2])  # Kimga berilishi (Telegram ID)
+        
+        # 2. To'g'ridan-to'g'ri bazaga ulanib, ko'yinni qo'shish
+        async with aiosqlite.connect(DB_PATH) as db:
+            cursor = await db.execute(
+                "UPDATE users SET coins = coins + ? WHERE user_id = ?",
+                (amount, target_id)
+            )
+            await db.commit()
+            
+            # Agar bazada bunday ID li foydalanuvchi topilmasa
+            if cursor.rowcount == 0:
+                await message.answer(
+                    f"❌ Xatolik: Bazadan `{target_id}` ID li foydalanuvchi topilmadi!"
+                )
+                return
+        
+        # 3. Muvaffaqiyatli yakunlangani haqida xabar
+        await message.answer(
+            f"✅ Muvaffaqiyatli bajarildi!\n"
+            f"👤 Foydalanuvchi: `{target_id}`\n"
+            f"💰 Qo'shildi: {amount} ko'yin"
+        )
+        
+    except ValueError:
+        await message.answer("❌ Miqdor va Telegram ID faqat sonlardan iborat bo'lishi kerak!")
+    except Exception as e:
+        await message.answer(f"❌ Kutilmagan xatolik yuz berdi: {str(e)}")
