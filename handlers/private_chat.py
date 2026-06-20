@@ -49,7 +49,7 @@ async def cmd_start_private(message: Message):
         "📦 /mening_xaridlarim – Xaridlar tarixi\n"
         "📝 /ariza [sabab] – Sudyaga ariza yuborish\n"
         "💰 /balans – Coin balansim\n\n"
-        "🏛️ O'yinni boshlash uchun guruhda <code>/yangi_ish</code> yozing!"
+        "🏛️ O'yinni boshlash uchun guruhda <code>/yangi_ish</code> yozing!\n"
         "🤖 yordam uchun bot adminiga murojat qiling [@dasturchi_uzn1]"
     )
 
