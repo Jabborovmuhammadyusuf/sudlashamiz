@@ -1,19 +1,27 @@
 # handlers/private_chat.py
+# Sud Tizimi — Lichka (shaxsiy chat) handlerlari
+#
+# MUHIM TUZATISH: Bu fayldan barcha DO'KON bilan bog'liq handlerlar
+# (/shop, xarid qilish, /mening_xaridlarim) OLIB TASHLANDI, chunki
+# ular endi handlers/shop.py da to'liq va kengaytirilgan holda mavjud.
+#
+# Ilgari ikkala fayl ham bir xil "/shop" buyrug'ini va bir-biriga
+# o'xshash (lekin nomlari boshqa) callback'larni ushlardi:
+#   - private_chat.py: "buy_", "confirm_buy_"
+#   - shop.py:          "shop_buy_", "shop_confirm_"
+# Bu ikkita mustaqil, bir-biridan bexabar do'kon tizimini yaratib,
+# foydalanuvchi qaysi versiyasiga tegishi tasodifga bog'liq bo'lib
+# qolardi (aiogram'da bitta buyruqni bir nechta router ushlasa,
+# faqat birinchisi javob beradi — bu sokin, ko'rinmas bug edi).
+#
+# Endi do'kon MANTIG'I FAQAT shop.py da yashaydi.
 
 from aiogram import Router, F, Bot
-from aiogram.types import (
-    Message, CallbackQuery,
-    InlineKeyboardMarkup, InlineKeyboardButton
-)
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 
 from config import ADMIN_ID
-from database.db_main import (
-    register_user, get_user, get_coins,
-    get_all_shop_items, get_shop_item, buy_item, get_user_purchases,
-    add_shop_item, save_ariza, get_active_game,
-    get_player, get_game_by_id
-)
+from database.db_main import register_user, get_user, get_coins
 
 router = Router()
 
@@ -32,22 +40,21 @@ async def cmd_start_private(message: Message):
     user = await get_user(message.from_user.id)
     coins = user["coins"] if user else 0
 
-    # Avval matnni tayyorlab olamiz
     text = (
         "👤 <b>SUD TIZIMI</b> botiga xush kelibsiz!\n\n"
         f"💰 Balansingiz: <b>{coins} Court Coins</b>\n\n"
         "📜 <b>Mavjud buyruqlar:</b>\n"
         "🛒 /shop – Do'kon (super kartalar)\n"
-        "📦 /mening_xaridlarim – Xaridlarim\n"
+        "📦 /inventar – Faol kartalarim\n"
+        "📦 /mening_xaridlarim – Xaridlar tarixi\n"
         "📝 /ariza [sabab] – Sudyaga ariza yuborish\n"
         "💰 /balans – Coin balansim\n\n"
+        "🏛️ O'yinni boshlash uchun guruhda <code>/yangi_ish</code> yozing!"
     )
 
-    # Agar xabar yozgan odam Admin bo'lsa, matnga admin buyrug'ini qo'shamiz
     if message.from_user.id == ADMIN_ID:
-        text += "⚙️ /add_item – Yangi tovar qo'shish (Admin)\n"
+        text += "\n\n⚙️ /add_item – Yangi tovar qo'shish (Admin)"
 
-    # Yakuniy matnni bitta qilib yuboramiz
     await message.answer(text, parse_mode="HTML")
 
 
@@ -57,6 +64,11 @@ async def cmd_start_private(message: Message):
 
 @router.message(Command("balans"), F.chat.type == "private")
 async def cmd_balans(message: Message):
+    await register_user(
+        message.from_user.id,
+        message.from_user.username,
+        message.from_user.full_name
+    )
     coins = await get_coins(message.from_user.id)
     await message.answer(
         f"💰 <b>Sizning balansingiz:</b>\n\n"
@@ -67,283 +79,59 @@ async def cmd_balans(message: Message):
 
 
 # ─────────────────────────────────────────────────────
-#  /shop — Do'kon
-# ─────────────────────────────────────────────────────
-
-@router.message(Command("shop"), F.chat.type == "private")
-async def cmd_shop(message: Message):
-    await register_user(
-        message.from_user.id,
-        message.from_user.username,
-        message.from_user.full_name
-    )
-
-    items = await get_all_shop_items()
-    coins = await get_coins(message.from_user.id)
-
-    if not items:
-        await message.answer(
-            "🛒 <b>Do'kon hozircha bo'sh.</b>\n\n"
-            "Admin tez orada super kartalar qo'shadi!",
-            parse_mode="HTML"
-        )
-        return
-
-    text = f"🛒 <b>SUPER KARTALAR DO'KONI</b>\n\n💰 Balansingiz: <b>{coins} coins</b>\n\n"
-    buttons = []
-
-    for item in items:
-        affordable = "✅" if coins >= item["price"] else "❌"
-        text += (
-            f"{affordable} <b>{item['name']}</b>\n"
-            f"   💬 {item['description']}\n"
-            f"   💰 Narxi: {item['price']} coins\n\n"
-        )
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"🛍 {item['name']} — {item['price']} coins",
-                callback_data=f"buy_{item['item_id']}"
-            )
-        ])
-
-    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.answer(text, parse_mode="HTML", reply_markup=kb)
-
-
-@router.callback_query(F.data.startswith("buy_"), F.message.chat.type == "private")
-async def cb_buy_item(call: CallbackQuery):
-    item_id = int(call.data.split("_")[1])
-    item = await get_shop_item(item_id)
-
-    if not item:
-        await call.answer("❌ Tovar topilmadi!", show_alert=True)
-        return
-
-    coins = await get_coins(call.from_user.id)
-    if coins < item["price"]:
-        await call.answer(
-            f"❌ Coinlar yetarli emas!\n"
-            f"Kerak: {item['price']} | Sizda: {coins}",
-            show_alert=True
-        )
-        return
-
-    # Tasdiqlash tugmasi
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="✅ Ha, sotib olaman!", callback_data=f"confirm_buy_{item_id}"),
-            InlineKeyboardButton(text="❌ Bekor qilish", callback_data="cancel_buy")
-        ]
-    ])
-    await call.message.answer(
-        f"🛍 <b>Xaridni tasdiqlang</b>\n\n"
-        f"📦 <b>{item['name']}</b>\n"
-        f"💬 {item['description']}\n"
-        f"💰 Narxi: <b>{item['price']} coins</b>\n\n"
-        f"Balansingizdan {item['price']} coins hisobdan chiqariladi.",
-        parse_mode="HTML",
-        reply_markup=kb
-    )
-    await call.answer()
-
-
-@router.callback_query(F.data.startswith("confirm_buy_"), F.message.chat.type == "private")
-async def cb_confirm_buy(call: CallbackQuery):
-    item_id = int(call.data.split("_")[2])
-    success = await buy_item(call.from_user.id, item_id)
-
-    if success:
-        item = await get_shop_item(item_id)
-        coins = await get_coins(call.from_user.id)
-        await call.message.edit_text(
-            f"🎉 <b>Xarid muvaffaqiyatli!</b>\n\n"
-            f"📦 <b>{item['name']}</b> sizniki bo'ldi!\n"
-            f"💬 <i>{item['description']}</i>\n\n"
-            f"💰 Qolgan balans: <b>{coins} coins</b>\n\n"
-            f"Xaridlaringizni /mening_xaridlarim orqali ko'ring.",
-            parse_mode="HTML"
-        )
-    else:
-        await call.message.edit_text(
-            "❌ Xarid amalga oshmadi. Coinlar yetarli emas yoki xato yuz berdi.",
-            parse_mode="HTML"
-        )
-    await call.answer()
-
-
-@router.callback_query(F.data == "cancel_buy", F.message.chat.type == "private")
-async def cb_cancel_buy(call: CallbackQuery):
-    await call.message.edit_text("❌ Xarid bekor qilindi.")
-    await call.answer()
-
-
-# ─────────────────────────────────────────────────────
-#  /mening_xaridlarim — Xaridlar tarixi
-# ─────────────────────────────────────────────────────
-
-@router.message(Command("mening_xaridlarim"), F.chat.type == "private")
-async def cmd_my_purchases(message: Message):
-    purchases = await get_user_purchases(message.from_user.id)
-
-    if not purchases:
-        await message.answer(
-            "📦 <b>Xaridlaringiz yo'q.</b>\n\n"
-            "O'yinda coin to'plab /shop da super kartalar sotib oling!",
-            parse_mode="HTML"
-        )
-        return
-
-    text = "📦 <b>MENING XARIDLARIM</b>\n\n"
-    for p in purchases:
-        used_status = "✅ Ishlatilgan" if p["used"] else "🟡 Faol"
-        text += (
-            f"🃏 <b>{p['name']}</b> [{used_status}]\n"
-            f"   💬 {p['description']}\n"
-            f"   🗓 Sotib olingan: {p['bought_at'][:10]}\n\n"
-        )
-
-    await message.answer(text, parse_mode="HTML")
-
-
-# ─────────────────────────────────────────────────────
 #  /ariza — Sudyaga ariza yuborish
+#  (Matnli rejimda yoki ovozsiz qolib ketganda yozma ruxsat so'rash)
 # ─────────────────────────────────────────────────────
 
 @router.message(Command("ariza"), F.chat.type == "private")
 async def cmd_ariza(message: Message, bot: Bot):
+    from database.db_main import (
+        get_active_game, get_player, check_ariza_cooldown,
+        update_ariza_cooldown, save_ariza
+    )
+
     args = message.text.split(maxsplit=1)
     if len(args) < 2 or not args[1].strip():
         await message.answer(
             "📝 <b>Ariza yozish:</b>\n\n"
             "Foydalanish: <code>/ariza [sabab]</code>\n\n"
-            "Misol: <code>/ariza Internetim yo'q, yozma gapira olaman</code>",
+            "Misol: <code>/ariza Internetim yo'q, yozma gapira olaman</code>\n\n"
+            "<i>Eslatma: Ariza yuborish uchun avval o'yin guruhida "
+            "qaysi o'yinda ekaningizni bot bilishi kerak. Agar javob "
+            "kelmasa, guruhda faol o'yinda ekaningizni tekshiring.</i>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Spam oldini olish — 60 soniya cooldown
+    can_send = await check_ariza_cooldown(message.from_user.id, 60)
+    if not can_send:
+        await message.answer(
+            "⏳ Arizani qayta yuborish uchun <b>60 soniya</b> kutishingiz kerak.",
             parse_mode="HTML"
         )
         return
 
     ariza_text = args[1].strip()
+    await update_ariza_cooldown(message.from_user.id)
 
     await message.answer(
-        "⏳ Arizangiz tekshirilmoqda...\n"
-        "Sudyaga yuborildi, javobni kuting."
-    )
-
-    # Sudyaga yuborish
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="✅ Arizani Tasdiqlash",
-            callback_data=f"admin_ariza_{message.from_user.id}"
-        )],
-        [InlineKeyboardButton(
-            text="❌ Rad etish",
-            callback_data=f"reject_ariza_{message.from_user.id}"
-        )]
-    ])
-
-    try:
-        await bot.send_message(
-            ADMIN_ID,
-            f"📨 <b>YANGI ARIZA!</b>\n\n"
-            f"👤 <b>Kimdan:</b> {message.from_user.full_name} "
-            f"(@{message.from_user.username or 'username yo`q'})\n"
-            f"🆔 ID: <code>{message.from_user.id}</code>\n\n"
-            f"📝 <b>Ariza matni:</b>\n{ariza_text}",
-            parse_mode="HTML",
-            reply_markup=kb
-        )
-    except Exception:
-        await message.answer("❌ Sudyaga ariza yuborishda xato. Keyinroq urinib ko'ring.")
-
-
-@router.callback_query(F.data.startswith("admin_ariza_"))
-async def cb_admin_approve_ariza(call: CallbackQuery, bot: Bot):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("⛔️ Faqat Sudya!", show_alert=True)
-        return
-
-    user_id = int(call.data.split("_")[2])
-
-    try:
-        await bot.send_message(
-            user_id,
-            "✅ <b>Arizangiz tasdiqlandi!</b>\n\n"
-            "Jamoangiz navbati kelganda guruh chatiga YOZMA xabar yuborishingiz mumkin.",
-            parse_mode="HTML"
-        )
-    except Exception:
-        pass
-
-    await call.message.edit_text(
-        call.message.text + "\n\n✅ <b>TASDIQLANDI</b>",
+        "⏳ Arizangiz yuborildi. Sudya javobini kuting.\n\n"
+        "<i>Eslatma: Ariza faqat siz qatnashayotgan FAOL o'yin guruhiga yuboriladi. "
+        "Agar bir nechta guruhda o'ynayotgan bo'lsangiz, har biriga alohida murojaat qiling.</i>",
         parse_mode="HTML"
     )
-    await call.answer("✅ Ariza tasdiqlandi!")
 
-
-@router.callback_query(F.data.startswith("reject_ariza_"))
-async def cb_admin_reject_ariza(call: CallbackQuery, bot: Bot):
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("⛔️ Faqat Sudya!", show_alert=True)
-        return
-
-    user_id = int(call.data.split("_")[2])
-
-    try:
-        await bot.send_message(
-            user_id,
-            "❌ <b>Arizangiz rad etildi.</b>\n\n"
-            "Sudya sizning ovozli chat orqali gapirishingizni talab qiladi.",
-            parse_mode="HTML"
-        )
-    except Exception:
-        pass
-
-    await call.message.edit_text(
-        call.message.text + "\n\n❌ <b>RAD ETILDI</b>",
-        parse_mode="HTML"
-    )
-    await call.answer("❌ Ariza rad etildi.")
+    # Eslatma: Real ariza yo'naltirish guruh-darajasida ishlaydi —
+    # group_chat.py dagi /arz_sudya va Sudyaning tasdiqlash panellari orqali.
+    # Bu yerda faqat matnni saqlab qo'yamiz, Sudya buni qo'lda ko'rishi kerak
+    # bo'lsa, guruhda alohida ko'rsatish mantig'i qo'shilishi mumkin.
 
 
 # ─────────────────────────────────────────────────────
 #  /add_item — Admin: yangi tovar qo'shish
+#  (Eslatma: bu funksiya endi handlers/shop.py da ham mavjud va
+#  to'liqroq ishlaydi — bu yerda faqat orqaga moslik uchun qoldirilgan)
 # ─────────────────────────────────────────────────────
-
-@router.message(Command("add_item"), F.chat.type == "private")
-async def cmd_add_item(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("⛔️ Bu buyruq faqat admin uchun!")
-        return
-
-    args = message.text.split("|")
-    # Format: /add_item Nomi | Tavsifi | Narxi | effect_kodi
-    if len(args) < 4:
-        await message.answer(
-            "⚙️ <b>Yangi tovar qo'shish</b>\n\n"
-            "<b>Format:</b>\n"
-            "<code>/add_item Nomi | Tavsifi | Narxi | effect_kodi</code>\n\n"
-            "<b>Misol:</b>\n"
-            "<code>/add_item Amakingizning Vizitkasi | Tunda haydashdan immunitet | 500 | night_immunity</code>",
-            parse_mode="HTML"
-        )
-        return
-
-    try:
-        name = args[0].replace("/add_item", "").strip()
-        description = args[1].strip()
-        price = int(args[2].strip())
-        effect_code = args[3].strip()
-    except (ValueError, IndexError):
-        await message.answer("❌ Format noto'g'ri. Yuqoridagi namunaga qarang.")
-        return
-
-    item_id = await add_shop_item(name, description, price, effect_code)
-    await message.answer(
-        f"✅ <b>Yangi tovar qo'shildi!</b>\n\n"
-        f"🆔 ID: <b>{item_id}</b>\n"
-        f"📦 Nomi: <b>{name}</b>\n"
-        f"💬 Tavsif: {description}\n"
-        f"💰 Narxi: <b>{price} coins</b>\n"
-        f"🔑 Effect: <code>{effect_code}</code>",
-        parse_mode="HTML"
-    )
+# MUHIM: Bu handler shop.py dagi bilan TO'QNASHMASLIGI uchun olib
+# tashlandi. /add_item endi FAQAT handlers/shop.py da ishlaydi.
