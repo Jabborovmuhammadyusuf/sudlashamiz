@@ -53,6 +53,10 @@ async def create_tables():
                 white_dalil_used    INTEGER DEFAULT 0,
                 -- shu raundda ishlatilganmi
                 black_dalil_used    INTEGER DEFAULT 0,
+                white_scored        INTEGER DEFAULT 0,
+                -- shu raundda Sudya Oqlarga ball berdimi (anti-duplicate)
+                black_scored        INTEGER DEFAULT 0,
+                -- shu raundda Sudya Qoralarga ball berdimi (anti-duplicate)
                 judge_last_action   TEXT    DEFAULT (datetime('now')),
                 -- AFK tekshiruvi uchun
                 created_at          TEXT    DEFAULT (datetime('now')),
