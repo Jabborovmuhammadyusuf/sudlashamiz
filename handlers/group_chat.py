@@ -43,8 +43,7 @@ from database.db_main import (
     save_night_action, get_night_actions, mark_night_action_processed,
     get_player_night_action, cast_impeachment_vote,
     check_ariza_cooldown, update_ariza_cooldown,
-    cast_karma_vote, get_karma_summary,
-    add_coins, add_rating, get_user_purchases, mark_item_used
+    cast_karma_vote, get_karma_summary, add_rating, get_user_purchases, mark_item_used
 )
 
 logger = logging.getLogger(__name__)
