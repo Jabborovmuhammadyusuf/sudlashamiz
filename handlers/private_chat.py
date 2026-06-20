@@ -123,7 +123,43 @@ async def cmd_ariza(message: Message, bot: Bot):
         "Agar bir nechta guruhda o'ynayotgan bo'lsangiz, har biriga alohida murojaat qiling.</i>",
         parse_mode="HTML"
     )
+from aiogram import Router, F
+from aiogram.types import Message
+from aiogram.filters import Command
 
+# config.py faylida ADMIN_ID o'zgaruvchisi bor deb hisoblaymiz
+from config import ADMIN_ID 
+# db.py faylidagi bazani yangilash funksiyasi (loyihangizga qarab nomlang)
+from db import update_user_balance 
+
+router = Router()
+
+@router.message(Command("add_coin"))
+async def add_coin_for_admin(message: Message):
+    # Faqat siz ishlata olishingiz uchun tekshiruv
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("❌ Bu buyruq faqat bot admini uchun!")
+        return
+
+    # Buyruq formati: /add_coin 5000
+    try:
+        args = message.text.split()
+        if len(args) < 2:
+            await message.answer("⚠️ Miqdorni kiriting. Misol: `/add_coin 5000`")
+            return
+            
+        amount = int(args[1])
+        
+        # Bazada balansni yangilash (O'z ma'lumotlar bazasi funksiyangizga moslang)
+        # users jadvalidagi balansni yangilaydi
+        await update_user_balance(message.from_user.id, amount)
+        
+        await message.answer(f"✅ Hisobingizga muvaffaqiyatli {amount} Court Coins qo'shildi!")
+        
+    except ValueError:
+        await message.answer("❌ Miqdor faqat son bo'lishi kerak!")
+    except Exception as e:
+        await message.answer(f"❌ Xatolik yuz berdi: {str(e)}")
     # Eslatma: Real ariza yo'naltirish guruh-darajasida ishlaydi —
     # group_chat.py dagi /arz_sudya va Sudyaning tasdiqlash panellari orqali.
     # Bu yerda faqat matnni saqlab qo'yamiz, Sudya buni qo'lda ko'rishi kerak
