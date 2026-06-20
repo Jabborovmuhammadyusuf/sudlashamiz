@@ -135,3 +135,49 @@ async def cmd_ariza(message: Message, bot: Bot):
 # ─────────────────────────────────────────────────────
 # MUHIM: Bu handler shop.py dagi bilan TO'QNASHMASLIGI uchun olib
 # tashlandi. /add_item endi FAQAT handlers/shop.py da ishlaydi.
+@router.message(Command("add_coin"))
+async def add_coin_for_user(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("❌ Bu buyruq faqat bot admini uchun!")
+        return
+
+    try:
+        args = message.text.split()
+        if len(args) < 3:
+            await message.answer("⚠️ Format noto'g'ri!\nMisol: `/add_coin 5000 8427195901`")
+            return
+            
+        amount = int(args[1])     
+        target_id = int(args[2])  
+        
+        async with aiosqlite.connect(DB_PATH) as db:
+            # 1. Birinchi bo'lib tekshiramiz: foydalanuvchi bazada bormi?
+            async with db.execute("SELECT 1 FROM users WHERE user_id = ?", (target_id,)) as cursor:
+                user_exists = await cursor.fetchone()
+            
+            if user_exists:
+                # Agar bor bo'lsa, ko'yinni shunchaki qo'shamiz
+                await db.execute(
+                    "UPDATE users SET coins = coins + ? WHERE user_id = ?",
+                    (amount, target_id)
+                )
+            else:
+                # Agar yo'q bo'lsa, yangi qator ochib, ko'yinni yozamiz
+                # (Eslatma: jadvalingizda boshqa majburiy ustunlar bo'lsa, ularni ham qo'shish kerak bo'lishi mumkin)
+                await db.execute(
+                    "INSERT INTO users (user_id, coins) VALUES (?, ?)",
+                    (target_id, amount)
+                )
+                
+            await db.commit()
+        
+        await message.answer(
+            f"✅ Muvaffaqiyatli bajarildi!\n"
+            f"👤 Foydalanuvchi: `{target_id}`\n"
+            f"💰 Balansga qo'shildi: {amount} ko'yin"
+        )
+        
+    except ValueError:
+        await message.answer("❌ Miqdor va Telegram ID faqat sonlardan iborat bo'lishi kerak!")
+    except Exception as e:
+        await message.answer(f"❌ Kutilmagan xatolik yuz berdi: {str(e)}")
